@@ -1,8 +1,10 @@
 import jax
 import jax.numpy as jnp
 import optax
+import time
 
 from model import SequenceModel
+from data import CharData
 
 
 BATCH_SIZE = 16
@@ -55,3 +57,44 @@ def make_train_step(model, vocab_size):
         return loss, bpc, perplexity
 
     return optimizer, train_step, eval_step
+
+def main():
+    dm = CharData()
+    dm.prepare()
+
+    V = dm.vocab_size()
+    print(f"Vocab size: {V}")
+
+    train_iter = dm.train_loader(batch_size=BATCH_SIZE, shuffle=True)
+    val_iter = dm.val_loader(batch_size=BATCH_SIZE, shuffle=False)
+
+    rng = jax.random.PRNGKey(0)
+    model, params = setup_model(V, rng)
+
+    param_count = sum(x.size for x in jax.tree.leaves(params))
+    print("Total params:", param_count)
+
+    optimizer, train_step, eval_step = make_train_step(model, V)
+    opt_state = optimizer.init(params)
+
+    t0 = time.time()
+    for step in range(1, MAX_STEPS + 1):
+        x_np, y_np = next(train_iter)            
+        x = jnp.array(x_np, jnp.int32)
+        y = jnp.array(y_np, jnp.int32)
+
+        params, opt_state, loss = train_step(params, opt_state, x, y)
+
+        if step % LOG_EVERY == 0:
+            x_val_np, y_val_np = next(val_iter)
+            x_val = jnp.array(x_val_np, jnp.int32)
+            y_val = jnp.array(y_val_np, jnp.int32)
+
+            val_loss, val_bpc, val_ppl = eval_step(params, x_val, y_val)
+
+            dt = time.time() - t0
+            print(f"[step {step:5d}] train_loss = {float(loss):.4f} val_loss = {float(val_loss):.4f} perplexity={val_ppl:.3f} bpc={val_bpc:.3f} ({dt:.1f}s)")
+            t0 = time.time()
+
+if __name__ == "__main__":
+    main()
