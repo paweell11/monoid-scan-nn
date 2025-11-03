@@ -4,7 +4,7 @@ import optax
 import time
 
 from model import SequenceModel
-from data import CharData
+from data import CharData, make_window_starts
 
 
 BATCH_SIZE = 16
@@ -58,12 +58,33 @@ def make_train_step(model, vocab_size):
 
     return optimizer, train_step, eval_step
 
+def generate(model, params, dm, prompt: str, max_new_tokens: int = 100):
+    ids = dm.encode_str(prompt)
+    context_ids = list(ids)
+    h0 = jnp.zeros((HIDDEN_DIM,))
+
+    for _ in range(max_new_tokens):
+        x_ids = jnp.array(context_ids, dtype=jnp.int32) 
+        x_oh = jax.nn.one_hot(x_ids, dm.vocab_size())
+        logits, _ = model.apply(params, x_oh, h0)
+        last_logit = logits[-1]
+        next_id = int(jnp.argmax(last_logit))
+        context_ids.append(next_id)
+    
+    return dm.decode_ids(context_ids)
+
 def main():
     dm = CharData()
     dm.prepare()
 
     V = dm.vocab_size()
     print(f"Vocab size: {V}")
+    print(f"Train tokens: {len(dm.train_ids)}")
+    num_windows = len(make_window_starts(len(dm.train_ids), SEQ_LEN))
+    steps_per_epoch = num_windows // BATCH_SIZE
+    epochs = MAX_STEPS // steps_per_epoch
+    print(f"Step per epoch: {steps_per_epoch}")
+    print(f"Number of epochs: {epochs}")
 
     train_iter = dm.train_loader(batch_size=BATCH_SIZE, shuffle=True)
     val_iter = dm.val_loader(batch_size=BATCH_SIZE, shuffle=False)
@@ -95,6 +116,13 @@ def main():
             dt = time.time() - t0
             print(f"[step {step:5d}] train_loss = {float(loss):.4f} val_loss = {float(val_loss):.4f} perplexity={val_ppl:.3f} bpc={val_bpc:.3f} ({dt:.1f}s)")
             t0 = time.time()
+    try:
+        sample = generate(model, params, dm, prompt="Litwo! ", max_new_tokens=100)
+        print("\n=== SAMPLE ===")
+        print(sample)
+    except Exception as e:
+        print("Sampling failed:", e)
+
 
 if __name__ == "__main__":
     main()

@@ -77,6 +77,6 @@ class SequenceModel(nn.Module):
             parallel_scan=True
         )(x_seq, h0)                  # (T,H)
 
-        y_all = MLP(self.mlp_widths)(h_all) 
+        y_all = MLP(self.mlp_widths)(h_all)     # (T,C)
 
         return y_all, h_all
