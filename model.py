@@ -1,3 +1,4 @@
+from typing import Sequence, Optional, Tuple
 import jax
 import jax.numpy as jnp
 from jax import lax
@@ -6,8 +7,8 @@ from flax import linen as nn
 
 # Linear Recurrent Unit (LRU)
 class LinearRecurrentUnit(nn.Module):
-    hidden_dim: int         # H – wymiar stanu h_t
-    input_dim: int          # X – wymiar wejścia x_t
+    hidden_dim: int         # H - wymiar stanu h_t
+    input_dim: int          # X - wymiar wejścia x_t
     a_scale: float = 0.1
     a_identity: float = 0.9
     parallel_scan: bool = True 
