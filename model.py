@@ -7,7 +7,7 @@ from flax import linen as nn
 # Linear Recurrent Unit (LRU)
 class LinearRecurrentUnit(nn.Module):
     hidden_dim: int         # H – wymiar stanu h_t
-    input_dim: int          # X – wymiar wejścia x_t, liczba cech
+    input_dim: int          # X – wymiar wejścia x_t
     a_scale: float = 0.1
     a_identity: float = 0.9
     parallel_scan: bool = True 
@@ -50,3 +50,32 @@ class LinearRecurrentUnit(nn.Module):
 
         return h_all
 
+# MLP
+class MLP(nn.Module):
+    widths: Sequence[int]  # np. [128, 128, C]
+
+    @nn.compact
+    def __call__(self, x: jnp.ndarray) -> jnp.ndarray:
+        for i, w in enumerate(self.widths):
+            x = nn.Dense(w)(x)
+            if i < len(self.widths) - 1:
+                x = nn.relu(x)
+        return x  
+
+
+class SequenceModel(nn.Module):
+    input_dim: int
+    hidden_dim: int
+    mlp_widths: Sequence[int]  # np. [128, 128, C]
+
+    @nn.compact
+    def __call__(self, x_seq: jnp.ndarray, h0: Optional[jnp.ndarray] = None ) -> Tuple[jnp.ndarray, jnp.ndarray]:
+        h_all = LinearRecurrentUnit(
+            hidden_dim=self.hidden_dim,
+            input_dim=self.input_dim,
+            parallel_scan=True
+        )(x_seq, h0)                  # (T,H)
+
+        y_all = MLP(self.mlp_widths)(h_all) 
+
+        return y_all, h_all
