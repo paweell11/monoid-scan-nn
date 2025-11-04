@@ -1,3 +1,6 @@
 # monoid-scan-nn
 
-<img width="858" height="320" alt="image" src="https://github.com/user-attachments/assets/7175f6cf-3160-4a41-8ce4-d9cba6628c5c" />
+<img width="858" height="492" alt="image" src="https://github.com/user-attachments/assets/624cc4ba-5282-4cb9-bcf4-a41983716a18" />
+
+<img width="858" height="492" alt="image" src="https://github.com/user-attachments/assets/c6b38bbd-3458-4468-8382-2433369b0f28" />
+
