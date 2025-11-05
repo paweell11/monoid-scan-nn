@@ -114,11 +114,18 @@ def main():
             val_loss, val_bpc, val_ppl = eval_step(params, x_val, y_val)
 
             dt = time.time() - t0
-            print(f"[step {step:5d}] train_loss = {float(loss):.4f} val_loss = {float(val_loss):.4f} perplexity={val_ppl:.3f} bpc={val_bpc:.3f} ({dt:.1f}s)")
+            sec_per_step = dt / LOG_EVERY
+            steps_per_sec = LOG_EVERY / dt
+            chars_per_sec = LOG_EVERY * BATCH_SIZE * SEQ_LEN / dt
+            print(f"[step {step:5d}] | train_loss = {float(loss):.4f} | val_loss = {float(val_loss):.4f} | "
+                f"ppl={val_ppl:.3f} | bpc={val_bpc:.3f} | sec/step={sec_per_step:.4f} | steps/sec={steps_per_sec:.2f} | "
+                f"chars/sec={chars_per_sec:.2f} ({dt:.1f}s)"
+            )
             t0 = time.time()
     try:
-        sample = generate(model, params, dm, prompt="Litwo! ", max_new_tokens=100)
-        print("\n=== SAMPLE ===")
+        prompt = "Litwo! Ojczyzny moja"
+        sample = generate(model, params, dm, prompt=prompt, max_new_tokens=100)
+        print(f"\n=== SAMPLE for {prompt} ===")
         print(sample)
     except Exception as e:
         print("Sampling failed:", e)
