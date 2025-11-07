@@ -3,6 +3,7 @@ import jax
 import jax.numpy as jnp
 from jax import lax
 from flax import linen as nn
+from .head import MLP
 
 
 # Linear Recurrent Unit (LRU)
@@ -51,20 +52,8 @@ class LinearRecurrentUnit(nn.Module):
 
         return h_all
 
-# MLP
-class MLP(nn.Module):
-    widths: Sequence[int]  # np. [128, 128, C]
 
-    @nn.compact
-    def __call__(self, x: jnp.ndarray) -> jnp.ndarray:
-        for i, w in enumerate(self.widths):
-            x = nn.Dense(w)(x)
-            if i < len(self.widths) - 1:
-                x = nn.relu(x)
-        return x  
-
-
-class SequenceModel(nn.Module):
+class ScanSequenceModel(nn.Module):
     input_dim: int
     hidden_dim: int
     mlp_widths: Sequence[int]  # np. [128, 128, C]

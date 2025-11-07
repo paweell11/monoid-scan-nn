@@ -3,7 +3,7 @@ import jax.numpy as jnp
 import optax
 import time
 
-from model import SequenceModel
+from models.lru import ScanSequenceModel
 from data import CharData, make_window_starts
 
 
@@ -17,7 +17,7 @@ LOG_EVERY = 400
 
 
 def setup_model(vocab_size: int, rng):
-    model = SequenceModel(
+    model = ScanSequenceModel(
         input_dim=vocab_size, hidden_dim=HIDDEN_DIM, mlp_widths=[MLP_HIDDEN, vocab_size],  
     )
     x_dummy = jnp.zeros((SEQ_LEN, vocab_size), jnp.float32)
