@@ -4,6 +4,8 @@ import optax
 import time
 
 from models.lru import ScanSequenceModel
+from models.rnn import RNNModel
+
 from data import CharData, make_window_starts
 
 
