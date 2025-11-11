@@ -2,6 +2,8 @@ import jax
 import jax.numpy as jnp
 import optax
 import time
+import os, json
+from datetime import datetime
 
 from models.lru import ScanSequenceModel
 from models.rnn import RNNModel
@@ -16,6 +18,12 @@ MLP_HIDDEN = 512
 LR = 1e-3
 MAX_STEPS = 10000
 LOG_EVERY = 400
+
+MODEL_NAME = "lru_scan"
+RUN_ID = datetime.now().strftime("%Y%m%d-%H%M%S")
+RUN_DIR = os.path.join("artifacts", MODEL_NAME, f"run-{RUN_ID}")
+os.makedirs(RUN_DIR, exist_ok=True)
+JSONL_PATH = os.path.join(RUN_DIR, "metrics.jsonl")
 
 
 def setup_model(vocab_size: int, rng):
@@ -75,6 +83,11 @@ def generate(model, params, dm, prompt: str, max_new_tokens: int = 100):
     
     return dm.decode_ids(context_ids)
 
+def log_jsonl(path, **kv):
+    with open(path, "a") as f:
+        f.write(json.dumps(kv) + "\n")
+
+
 def main():
     dm = CharData()
     dm.prepare()
@@ -123,6 +136,20 @@ def main():
                 f"ppl={val_ppl:.3f} | bpc={val_bpc:.3f} | sec/step={sec_per_step:.4f} | steps/sec={steps_per_sec:.2f} | "
                 f"chars/sec={chars_per_sec:.2f} ({dt:.1f}s)"
             )
+
+            metrics = {
+                "event": "log",
+                "step": step,
+                "train_loss": float(loss),
+                "val_loss": float(val_loss),
+                "ppl": float(val_ppl),
+                "bpc": float(val_bpc),
+                "sec_per_step": float(sec_per_step),
+                "steps_per_sec": float(steps_per_sec),
+                "chars_per_sec": float(chars_per_sec),
+                "interval_sec": float(dt)
+            }
+            log_jsonl(JSONL_PATH, **metrics)
             t0 = time.time()
     try:
         prompt = "Litwo! Ojczyzny moja"
