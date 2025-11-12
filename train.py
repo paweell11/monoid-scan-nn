@@ -10,6 +10,8 @@ from models.rnn import RNNModel
 
 from data import CharData, make_window_starts
 
+from utils.early_stopping import EarlyStopper
+
 
 BATCH_SIZE = 16
 SEQ_LEN = 128           # T
@@ -113,6 +115,9 @@ def main():
     optimizer, train_step, eval_step = make_train_step(model, V)
     opt_state = optimizer.init(params)
 
+    es = EarlyStopper(patience=10, min_delta=1e-4)
+    best_params = None 
+
     t0 = time.time()
     for step in range(1, MAX_STEPS + 1):
         x_np, y_np = next(train_iter)            
@@ -150,7 +155,23 @@ def main():
                 "interval_sec": float(dt)
             }
             log_jsonl(JSONL_PATH, **metrics)
+
+            should_stop, is_new_best = es.update(float(val_loss), step)
+            if is_new_best:
+                best_params = jax.tree_util.tree_map(lambda x: x.copy(), params)
+                log_jsonl(JSONL_PATH, event="best_update", step=step, best_val=es.best_value)
+
+            if should_stop:
+                log_jsonl(JSONL_PATH, event="early_stop",
+                        at_step=step, best_step=es.best_step,
+                        best_val=es.best_value, patience=es.patience)
+                break
             t0 = time.time()
+    
+    if best_params is not None:
+        params = best_params
+    log_jsonl(JSONL_PATH, event="run_end", best_step=es.best_step, best_val=es.best_value)
+    
     try:
         prompt = "Litwo! Ojczyzny moja"
         sample = generate(model, params, dm, prompt=prompt, max_new_tokens=100)
