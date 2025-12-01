@@ -4,6 +4,7 @@ import jax.numpy as jnp
 from jax import lax
 from flax import linen as nn
 from .head import MLP
+from .embed import TokenEmbedding
 
 class RecurrentNeuralNetwork(nn.Module):
     hidden_dim: int         # H – wymiar stanu h_t
@@ -32,17 +33,23 @@ class RecurrentNeuralNetwork(nn.Module):
         return h_all    
 
 class RNNModel(nn.Module):
-    input_dim: int
+    vocab_size: int
     hidden_dim: int
-    mlp_widths: Sequence[int]  # np. [128, 128, C]
+    mlp_widths: Sequence[int]  
+    embed_dim: int
 
     @nn.compact
-    def __call__(self, x_seq: jnp.ndarray, h0: Optional[jnp.ndarray] = None ) -> Tuple[jnp.ndarray, jnp.ndarray]:
+    def __call__(self, x_ids: jnp.ndarray, h0: Optional[jnp.ndarray] = None ) -> Tuple[jnp.ndarray, jnp.ndarray]:
+        x_emb = TokenEmbedding(
+            vocab_size = self.vocab_size,
+            embed_dim = self.embed_dim
+        )(x_ids)
+        
         h_all = RecurrentNeuralNetwork(
             hidden_dim=self.hidden_dim,
-            input_dim=self.input_dim,
-        )(x_seq, h0)                  # (T,H)
+            input_dim=self.embed_dim,
+        )(x_emb, h0)                  
 
-        y_all = MLP(self.mlp_widths)(h_all)  # (T,C)
+        y_all = MLP(self.mlp_widths)(h_all)  
 
         return y_all, h_all
