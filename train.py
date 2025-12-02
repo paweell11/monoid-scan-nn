@@ -15,8 +15,8 @@ from utils.early_stopping import EarlyStopper
 
 BATCH_SIZE = 16
 SEQ_LEN = 128           # T
-HIDDEN_DIM = 256        # H
-MLP_HIDDEN = 512
+HIDDEN_DIM = 64        # H
+MLP_HIDDEN = 96
 LR = 1e-3
 MAX_STEPS = 10000
 LOG_EVERY = 400
@@ -28,27 +28,26 @@ os.makedirs(RUN_DIR, exist_ok=True)
 JSONL_PATH = os.path.join(RUN_DIR, "metrics.jsonl")
 
 
-def setup_model(vocab_size: int, rng):
+def setup_model(vocab_size: int, rng, hidden_dim: int, mlp_hidden: int, seq_len: int):
     model = ScanSequenceModel(
-        input_dim=vocab_size, hidden_dim=HIDDEN_DIM, mlp_widths=[MLP_HIDDEN, vocab_size],  
+        vocab_size=vocab_size, hidden_dim=hidden_dim, mlp_widths=[mlp_hidden, vocab_size], embed_dim=96,
     )
-    x_dummy = jnp.zeros((SEQ_LEN, vocab_size), jnp.float32)
-    h0_dummy = jnp.zeros((HIDDEN_DIM,), jnp.float32)
+    x_dummy = jnp.zeros((seq_len,), jnp.float32)
+    h0_dummy = jnp.zeros((hidden_dim,), jnp.float32)
     params = model.init(rng, x_dummy, h0_dummy)  
     return model, params
 
 
-def make_train_step(model, vocab_size):
-    optimizer = optax.adam(LR)
+def make_train_step(model, vocab_size: int, hidden_dim: int, lr: float):
+    optimizer = optax.adam(lr)
 
     def forward(params, x_ids): 
-        x_oh = jax.nn.one_hot(x_ids, num_classes=vocab_size, dtype=jnp.float32)     # (B,T,V)
-        h0 = jnp.zeros((HIDDEN_DIM,), jnp.float32)
+        h0 = jnp.zeros((hidden_dim,), jnp.float32)
 
         def run_one(x_oh_seq):
             logits, _ = model.apply(params, x_oh_seq, h0)  # (T,V)
             return logits
-        return jax.vmap(run_one, in_axes=0)(x_oh)  # (B,T,V)
+        return jax.vmap(run_one, in_axes=0)(x_ids)  # (B,T,V)
 
     def loss_only(params, x_ids, y_ids):
         logits = forward(params, x_ids)
@@ -64,21 +63,18 @@ def make_train_step(model, vocab_size):
     @jax.jit
     def eval_step(params, x_ids, y_ids):
         loss = loss_only(params, x_ids, y_ids)
-        bpc = loss / jnp.log(2.0)
-        perplexity = jnp.exp(loss) 
-        return loss, bpc, perplexity
-
+        return loss
+    
     return optimizer, train_step, eval_step
 
 def generate(model, params, dm, prompt: str, max_new_tokens: int = 100):
     ids = dm.encode_str(prompt)
     context_ids = list(ids)
-    h0 = jnp.zeros((HIDDEN_DIM,))
+    h0 = jnp.zeros((HIDDEN_DIM,), dtype=jnp.float32)
 
     for _ in range(max_new_tokens):
         x_ids = jnp.array(context_ids, dtype=jnp.int32) 
-        x_oh = jax.nn.one_hot(x_ids, dm.vocab_size())
-        logits, _ = model.apply(params, x_oh, h0)
+        logits, _ = model.apply(params, x_ids, h0)
         last_logit = logits[-1]
         next_id = int(jnp.argmax(last_logit))
         context_ids.append(next_id)
@@ -107,12 +103,12 @@ def main():
     val_iter = dm.val_loader(batch_size=BATCH_SIZE, shuffle=False)
 
     rng = jax.random.PRNGKey(0)
-    model, params = setup_model(V, rng)
+    model, params = setup_model(V, rng, HIDDEN_DIM, MLP_HIDDEN, SEQ_LEN)
 
-    param_count = sum(x.size for x in jax.tree.leaves(params))
+    param_count = sum(x.size for x in jax.tree_util.tree_leaves(params))
     print("Total params:", param_count)
 
-    optimizer, train_step, eval_step = make_train_step(model, V)
+    optimizer, train_step, eval_step = make_train_step(model, V, HIDDEN_DIM, LR)
     opt_state = optimizer.init(params)
 
     es = EarlyStopper(patience=10, min_delta=1e-4)
@@ -131,7 +127,9 @@ def main():
             x_val = jnp.array(x_val_np, jnp.int32)
             y_val = jnp.array(y_val_np, jnp.int32)
 
-            val_loss, val_bpc, val_ppl = eval_step(params, x_val, y_val)
+            val_loss = eval_step(params, x_val, y_val)
+            val_bpc = val_loss / jnp.log(2.0)
+            val_ppl = jnp.exp(val_loss) 
 
             dt = time.time() - t0
             sec_per_step = dt / LOG_EVERY
