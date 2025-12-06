@@ -4,9 +4,12 @@ import optax
 import time
 import os, json
 from datetime import datetime
+from typing import Sequence, Optional
+from flax import linen as nn
 
 from models.lru import ScanSequenceModel
 from models.rnn import RNNModel
+from models.transformer import DecoderOnlyTransformer 
 
 from data import CharData, make_window_starts
 
@@ -21,6 +24,14 @@ LR = 1e-3
 MAX_STEPS = 10000
 LOG_EVERY = 400
 
+USE_TRANSFORMER = True  # False = SanSequenceModel/RNN, True = Transformer
+D_MODEL = 24
+NUM_LAYERS = 2
+NUM_HEADS = 2
+D_FF = 4 * D_MODEL
+MAX_LEN = SEQ_LEN  
+
+
 MODEL_NAME = "lru_scan"
 RUN_ID = datetime.now().strftime("%Y%m%d-%H%M%S")
 RUN_DIR = os.path.join("artifacts", MODEL_NAME, f"run-{RUN_ID}")
@@ -28,15 +39,57 @@ os.makedirs(RUN_DIR, exist_ok=True)
 JSONL_PATH = os.path.join(RUN_DIR, "metrics.jsonl")
 
 
-def setup_model(vocab_size: int, rng, hidden_dim: int, mlp_hidden: int, seq_len: int):
-    model = ScanSequenceModel(
-        vocab_size=vocab_size, hidden_dim=hidden_dim, mlp_widths=[mlp_hidden, vocab_size], embed_dim=96,
-    )
-    x_dummy = jnp.zeros((seq_len,), jnp.float32)
-    h0_dummy = jnp.zeros((hidden_dim,), jnp.float32)
-    params = model.init(rng, x_dummy, h0_dummy)  
-    return model, params
+class TransformerAsSequenceModel(nn.Module):
+    vocab_size: int
+    d_model: int
+    num_layers: int
+    num_heads: int
+    d_ff: int
+    max_len: int
+    mlp_widths: Sequence[int]
 
+    @nn.compact
+    def __call__(self, x_ids: jnp.ndarray, h0: Optional[jnp.ndarray] = None):
+        logits, hidden = DecoderOnlyTransformer(
+            vocab_size=self.vocab_size,
+            d_model=self.d_model,
+            num_layers=self.num_layers,
+            num_heads=self.num_heads,
+            d_ff=self.d_ff,
+            max_len=self.max_len,
+            mlp_widths=self.mlp_widths,
+        )(x_ids)
+        return logits, hidden
+
+
+def setup_model(vocab_size: int, rng, hidden_dim: int, mlp_hidden: int, seq_len: int, d_model: int, 
+                num_layers: int, num_heads: int, d_ff: int, max_len: int):
+    x_dummy = jnp.zeros((seq_len,), jnp.int32)
+
+    if not USE_TRANSFORMER:
+        model = ScanSequenceModel(
+            vocab_size=vocab_size,
+            hidden_dim=hidden_dim,
+            mlp_widths=[mlp_hidden, vocab_size],
+            embed_dim=96,
+        )
+        h0_dummy = jnp.zeros((hidden_dim,), jnp.float32)
+        params = model.init(rng, x_dummy, h0_dummy)
+
+    else:
+        model = TransformerAsSequenceModel(
+            vocab_size=vocab_size,
+            d_model=d_model,
+            num_layers=num_layers,
+            num_heads=num_heads,
+            d_ff=d_ff,
+            max_len=max_len,
+            mlp_widths=[mlp_hidden, vocab_size],
+        )
+        h0_dummy = jnp.zeros((1,), jnp.float32)  
+        params = model.init(rng, x_dummy, h0_dummy)
+
+    return model, params
 
 def make_train_step(model, vocab_size: int, hidden_dim: int, lr: float):
     optimizer = optax.adam(lr)
@@ -103,7 +156,7 @@ def main():
     val_iter = dm.val_loader(batch_size=BATCH_SIZE, shuffle=False)
 
     rng = jax.random.PRNGKey(0)
-    model, params = setup_model(V, rng, HIDDEN_DIM, MLP_HIDDEN, SEQ_LEN)
+    model, params = setup_model(V, rng, HIDDEN_DIM, MLP_HIDDEN, SEQ_LEN, D_MODEL, NUM_LAYERS, NUM_HEADS, D_FF, MAX_LEN)
 
     param_count = sum(x.size for x in jax.tree_util.tree_leaves(params))
     print("Total params:", param_count)
