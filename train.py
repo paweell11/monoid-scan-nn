@@ -51,13 +51,13 @@ class TransformerAsSequenceModel(nn.Module):
     @nn.compact
     def __call__(self, x_ids: jnp.ndarray, h0: Optional[jnp.ndarray] = None):
         logits, hidden = DecoderOnlyTransformer(
-            vocab_size=self.vocab_size,
-            d_model=self.d_model,
-            num_layers=self.num_layers,
-            num_heads=self.num_heads,
-            d_ff=self.d_ff,
-            max_len=self.max_len,
-            mlp_widths=self.mlp_widths,
+            vocab_size = self.vocab_size,
+            d_model = self.d_model,
+            num_layers = self.num_layers,
+            num_heads = self.num_heads,
+            d_ff = self.d_ff,
+            max_len = self.max_len,
+            mlp_widths = self.mlp_widths,
         )(x_ids)
         return logits, hidden
 
@@ -68,23 +68,23 @@ def setup_model(vocab_size: int, rng, hidden_dim: int, mlp_hidden: int, seq_len:
 
     if not USE_TRANSFORMER:
         model = ScanSequenceModel(
-            vocab_size=vocab_size,
-            hidden_dim=hidden_dim,
-            mlp_widths=[mlp_hidden, vocab_size],
-            embed_dim=96,
+            vocab_size = vocab_size,
+            hidden_dim = hidden_dim,
+            mlp_widths = [mlp_hidden, vocab_size],
+            embed_dim = 96,
         )
         h0_dummy = jnp.zeros((hidden_dim,), jnp.float32)
         params = model.init(rng, x_dummy, h0_dummy)
 
     else:
         model = TransformerAsSequenceModel(
-            vocab_size=vocab_size,
-            d_model=d_model,
-            num_layers=num_layers,
-            num_heads=num_heads,
-            d_ff=d_ff,
-            max_len=max_len,
-            mlp_widths=[mlp_hidden, vocab_size],
+            vocab_size = vocab_size,
+            d_model = d_model,
+            num_layers = num_layers,
+            num_heads = num_heads,
+            d_ff = d_ff,
+            max_len = max_len,
+            mlp_widths = [mlp_hidden, vocab_size],
         )
         h0_dummy = jnp.zeros((1,), jnp.float32)  
         params = model.init(rng, x_dummy, h0_dummy)
@@ -121,22 +121,66 @@ def make_train_step(model, vocab_size: int, hidden_dim: int, lr: float):
     return optimizer, train_step, eval_step
 
 def generate(model, params, dm, prompt: str, max_new_tokens: int = 100):
-    ids = dm.encode_str(prompt)
-    context_ids = list(ids)
-    h0 = jnp.zeros((HIDDEN_DIM,), dtype=jnp.float32)
 
-    for _ in range(max_new_tokens):
-        x_ids = jnp.array(context_ids, dtype=jnp.int32) 
-        logits, _ = model.apply(params, x_ids, h0)
-        last_logit = logits[-1]
-        next_id = int(jnp.argmax(last_logit))
-        context_ids.append(next_id)
-    
-    return dm.decode_ids(context_ids)
+    if not USE_TRANSFORMER:
+        # LRU / RNN 
+        ids = dm.encode_str(prompt)
+        prompt_ids = jnp.array(ids, dtype=jnp.int32)
+        
+        # PREFILL 
+        h0 = jnp.zeros((model.hidden_dim,), dtype=jnp.float32)
+        _, h_seq = model.apply(params, prompt_ids, h0)
+        h_current = h_seq[-1] 
+        current_token_id = prompt_ids[-1]
+        generated_ids = list(ids)
+
+        # DECODE
+        for _ in range(max_new_tokens):
+            curr_input = jnp.array([current_token_id], dtype=jnp.int32)
+            
+            logits, h_new = model.apply(
+                params, 
+                curr_input, 
+                h_current, 
+                method=model.infer_step
+            )
+            
+            next_id = int(jnp.argmax(logits))
+            generated_ids.append(next_id)
+            current_token_id = next_id 
+            h_current = h_new
+
+        return dm.decode_ids(generated_ids)
+
+    else:
+        # TRANSFORMER 
+        ids = dm.encode_str(prompt)
+        prompt_ids = jnp.array(ids, dtype=jnp.int32)
+        h0_dummy = jnp.zeros((1,), dtype=jnp.float32) 
+
+        # PREFILL
+        logits, _ = model.apply(params, prompt_ids, h0_dummy)
+        last_logit_prefill = logits[-1]
+        next_id = int(jnp.argmax(last_logit_prefill))
+        generated_ids = list(ids)
+        generated_ids.append(next_id)
+
+        # DECODE
+        for _ in range(max_new_tokens - 1):
+            x_ids = jnp.array(generated_ids, dtype=jnp.int32)
+            
+            logits, _ = model.apply(params, x_ids, h0_dummy)
+            
+            last_logit = logits[-1]
+            next_id = int(jnp.argmax(last_logit))
+            generated_ids.append(next_id)
+        
+        return dm.decode_ids(generated_ids)
 
 def log_jsonl(path, **kv):
     with open(path, "a") as f:
         f.write(json.dumps(kv) + "\n")
+
 
 
 def main():
@@ -224,7 +268,7 @@ def main():
     log_jsonl(JSONL_PATH, event="run_end", best_step=es.best_step, best_val=es.best_value)
     
     try:
-        prompt = "Litwo! Ojczyzny moja"
+        prompt = "Zbyszko "
         sample = generate(model, params, dm, prompt=prompt, max_new_tokens=100)
         print(f"\n=== SAMPLE for {prompt} ===")
         print(sample)
