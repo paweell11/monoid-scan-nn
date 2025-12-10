@@ -4,6 +4,9 @@ import urllib.request
 
 DATA_URL = "https://wolnelektury.pl/media/book/txt/pan-tadeusz.txt"
 
+DATA_URL1 = "https://wolnelektury.pl/media/book/txt/krzyzacy-tom-pierwszy.txt"
+DATA_URL2 = "https://wolnelektury.pl/media/book/txt/krzyzacy-tom-drugi.txt"
+
 SEQ_LEN = 128                      # T - długość jednej sekwencji
 TRAIN_SPLIT = 0.90                 
 VAL_SPLIT = 0.10                 
@@ -77,10 +80,18 @@ class CharData:
         self.val_ids = None
 
     def _load_raw_text(self):
-        with urllib.request.urlopen(DATA_URL) as resp:
-            raw_bytes = resp.read()
-        raw_text = raw_bytes[100:-1668].decode("utf-8", errors="ignore") 
-        text = normalize_text(raw_text)
+        with urllib.request.urlopen(DATA_URL1) as resp1:
+            raw_bytes1 = resp1.read()
+        raw_text1 = raw_bytes1[:-1645].decode("utf-8", errors="ignore") 
+        text1 = normalize_text(raw_text1)
+
+        with urllib.request.urlopen(DATA_URL2) as resp2:
+            raw_bytes2 = resp2.read()
+        raw_text2 = raw_bytes2[:-1610].decode("utf-8", errors="ignore") 
+        text2 = normalize_text(raw_text2)
+
+        text = text1 + text2
+
         return text
 
     def _split_train_val(self, full_text: str):
@@ -93,16 +104,13 @@ class CharData:
     def prepare(self):
         # pobranie całego tekstu
         all_text = self._load_raw_text()
-
         # podział na train / val 
         train_text, val_text = self._split_train_val(all_text)
-
         # budowa słownika 
         self.char2id, self.id2char = build_vocab(all_text)
-
         # zmiana tekstu na sekwencje ID
         self.train_ids = encode_text(train_text, self.char2id)  
-        self.val_ids = encode_text(val_text,   self.char2id)  
+        self.val_ids = encode_text(val_text, self.char2id)  
 
     def train_loader(self, batch_size: int, shuffle: bool = True):
         assert self.train_ids is not None, "Najpierw wywołaj prepare()."
