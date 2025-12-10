@@ -18,6 +18,12 @@ def train_one_run(hparams, trial=None) -> float:
     min_delta = hparams.get("min_delta", 1e-4)
     seed = hparams.get("seed", 0)
 
+    d_model = hparams["d_model"]
+    num_layers = hparams["num_layers"]
+    num_heads = hparams["num_heads"]
+    d_ff = hparams["d_ff"]
+    max_len = hparams["max_len"]
+
     dm = CharData()
     dm.prepare()
     V = dm.vocab_size()
@@ -26,7 +32,7 @@ def train_one_run(hparams, trial=None) -> float:
     val_iter   = dm.val_loader(batch_size=batch_size, shuffle=False)
 
     rng = jax.random.PRNGKey(seed)
-    model, params = setup_model(V, rng, hidden_dim, mlp_hidden, seq_len)
+    model, params = setup_model(V, rng, hidden_dim, mlp_hidden, seq_len, d_model, num_layers, num_heads, d_ff, max_len)
     optimizer, train_step, eval_step = make_train_step(model, V, hidden_dim, lr)
     opt_state = optimizer.init(params)
 
@@ -67,7 +73,7 @@ def train_one_run(hparams, trial=None) -> float:
 
 def objective(trial: optuna.Trial) -> float:
     hparams = {
-        "lr": trial.suggest_float("lr", 1e-4, 3e-3, log=True),
+        "lr": trial.suggest_float("lr", 1e-4, 1e-1, log=True),
         "hidden_dim": 64,
         "mlp_hidden": 96,
 
@@ -78,6 +84,12 @@ def objective(trial: optuna.Trial) -> float:
         "patience": 10,
         "min_delta": 1e-4,
         "seed": 1,
+
+        "d_model": 24,
+        "num_layers": 2,
+        "num_heads": 2, 
+        "d_ff": 96,
+        "max_len": 128,
     }
     best_val = train_one_run(hparams, trial=trial)
     return best_val
@@ -85,4 +97,4 @@ def objective(trial: optuna.Trial) -> float:
 
 if __name__ == "__main__":
     study = optuna.create_study(direction='minimize')
-    study.optimize(objective, n_trials=8)
+    study.optimize(objective, n_trials=20)
