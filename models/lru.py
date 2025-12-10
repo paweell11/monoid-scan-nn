@@ -61,17 +61,17 @@ class ScanSequenceModel(nn.Module):
     embed_dim: int
 
     @nn.compact
-    def __call__(self, x_ids: jnp.ndarray, h0: Optional[jnp.ndarray] = None ) -> Tuple[jnp.ndarray, jnp.ndarray]:
+    def __call__(self, x_ids: jnp.ndarray, h0: Optional[jnp.ndarray] = None) -> Tuple[jnp.ndarray, jnp.ndarray]:
         x_emb = TokenEmbedding(
             vocab_size = self.vocab_size,
             embed_dim = self.embed_dim,
-            name="token_embed" 
+            name = "token_embed" 
         )(x_ids)
         
         h_all = LinearRecurrentUnit(
-            hidden_dim=self.hidden_dim,
-            input_dim=self.embed_dim,
-            name="lru_layer"   
+            hidden_dim = self.hidden_dim,
+            input_dim = self.embed_dim,
+            name = "lru_layer"   
         )(x_emb, h0)                  
 
         y_all = MLP(self.mlp_widths, name="head_mlp")(h_all)     
@@ -89,9 +89,9 @@ class ScanSequenceModel(nn.Module):
         x_emb = x_emb.squeeze()
 
         lru_layer = LinearRecurrentUnit(
-            hidden_dim=self.hidden_dim,
-            input_dim=self.embed_dim,
-            name="lru_layer" 
+            hidden_dim = self.hidden_dim,
+            input_dim = self.embed_dim,
+            name = "lru_layer" 
         )
         h_new = lru_layer.cell(h_prev, x_emb)
 
