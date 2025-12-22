@@ -63,10 +63,10 @@ class TransformerAsSequenceModel(nn.Module):
 
 
 def setup_model(vocab_size: int, rng, hidden_dim: int, mlp_hidden: int, seq_len: int, d_model: int, 
-                num_layers: int, num_heads: int, d_ff: int, max_len: int):
+                num_layers: int, num_heads: int, d_ff: int, max_len: int, use_transformer: bool):
     x_dummy = jnp.zeros((seq_len,), jnp.int32)
 
-    if not USE_TRANSFORMER:
+    if not use_transformer:
         model = ScanSequenceModel(
             vocab_size = vocab_size,
             hidden_dim = hidden_dim,
@@ -200,7 +200,7 @@ def main():
     val_iter = dm.val_loader(batch_size=BATCH_SIZE, shuffle=False)
 
     rng = jax.random.PRNGKey(0)
-    model, params = setup_model(V, rng, HIDDEN_DIM, MLP_HIDDEN, SEQ_LEN, D_MODEL, NUM_LAYERS, NUM_HEADS, D_FF, MAX_LEN)
+    model, params = setup_model(V, rng, HIDDEN_DIM, MLP_HIDDEN, SEQ_LEN, D_MODEL, NUM_LAYERS, NUM_HEADS, D_FF, MAX_LEN, USE_TRANSFORMER)
 
     param_count = sum(x.size for x in jax.tree_util.tree_leaves(params))
     print("Total params:", param_count)
@@ -220,11 +220,21 @@ def main():
         params, opt_state, loss = train_step(params, opt_state, x, y)
 
         if step % LOG_EVERY == 0:
-            x_val_np, y_val_np = next(val_iter)
-            x_val = jnp.array(x_val_np, jnp.int32)
-            y_val = jnp.array(y_val_np, jnp.int32)
+            VAL_STEPS = 32
+            losses = []
 
-            val_loss = eval_step(params, x_val, y_val)
+            for _ in range(VAL_STEPS):
+                try:
+                    x_val_np, y_val_np = next(val_iter)
+                except StopIteration:
+                    val_iter = dm.val_loader(batch_size=BATCH_SIZE, shuffle=False)
+                    x_val_np, y_val_np = next(val_iter)    
+                x_val = jnp.array(x_val_np, jnp.int32)
+                y_val = jnp.array(y_val_np, jnp.int32)
+                l = eval_step(params, x_val, y_val)
+                losses.append(l)
+
+            val_loss = jnp.mean(jnp.array(losses))
             val_bpc = val_loss / jnp.log(2.0)
             val_ppl = jnp.exp(val_loss) 
 

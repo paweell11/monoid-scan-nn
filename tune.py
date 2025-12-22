@@ -18,6 +18,7 @@ def train_one_run(hparams, trial=None) -> float:
     min_delta = hparams.get("min_delta", 1e-4)
     seed = hparams.get("seed", 0)
 
+    use_transformer = hparams["use_transformer"]
     d_model = hparams["d_model"]
     num_layers = hparams["num_layers"]
     num_heads = hparams["num_heads"]
@@ -32,7 +33,7 @@ def train_one_run(hparams, trial=None) -> float:
     val_iter   = dm.val_loader(batch_size=batch_size, shuffle=False)
 
     rng = jax.random.PRNGKey(seed)
-    model, params = setup_model(V, rng, hidden_dim, mlp_hidden, seq_len, d_model, num_layers, num_heads, d_ff, max_len)
+    model, params = setup_model(V, rng, hidden_dim, mlp_hidden, seq_len, d_model, num_layers, num_heads, d_ff, max_len, use_transformer)
     optimizer, train_step, eval_step = make_train_step(model, V, hidden_dim, lr)
     opt_state = optimizer.init(params)
 
@@ -48,10 +49,21 @@ def train_one_run(hparams, trial=None) -> float:
         params, opt_state, loss = train_step(params, opt_state, x, y)
 
         if step % log_every == 0:
-            x_val_np, y_val_np = next(val_iter)
-            x_val = jnp.array(x_val_np, jnp.int32)
-            y_val = jnp.array(y_val_np, jnp.int32)
-            val_loss = eval_step(params, x_val, y_val)
+            VAL_STEPS = 32
+            losses = []
+
+            for _ in range(VAL_STEPS):
+                try:
+                    x_val_np, y_val_np = next(val_iter)
+                except StopIteration:
+                    val_iter = dm.val_loader(batch_size=batch_size, shuffle=False)
+                    x_val_np, y_val_np = next(val_iter)    
+                x_val = jnp.array(x_val_np, jnp.int32)
+                y_val = jnp.array(y_val_np, jnp.int32)
+                l = eval_step(params, x_val, y_val)
+                losses.append(l)
+
+            val_loss = jnp.mean(jnp.array(losses))
 
             if trial is not None:
                 val_idx += 1
@@ -72,6 +84,7 @@ def train_one_run(hparams, trial=None) -> float:
 
 
 def objective(trial: optuna.Trial) -> float:
+    dm = 92
     hparams = {
         "lr": trial.suggest_float("lr", 1e-4, 1e-1, log=True),
         "hidden_dim": 64,
@@ -85,10 +98,11 @@ def objective(trial: optuna.Trial) -> float:
         "min_delta": 1e-4,
         "seed": 1,
 
-        "d_model": 24,
+        "use_transformer": False,
+        "d_model": dm,
         "num_layers": 2,
         "num_heads": 2, 
-        "d_ff": 96,
+        "d_ff": 4*dm,
         "max_len": 128,
     }
     best_val = train_one_run(hparams, trial=trial)
